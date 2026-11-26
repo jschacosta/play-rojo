@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         play-rojo
 // @namespace    https://github.com/jschacosta/play-rojo
-// @version      0.1.0
+// @version      0.1.1
 // @description  Adelanta y silencia los anuncios de YouTube, oculta banners y permite audio en segundo plano. Reglas remotas que se actualizan solas.
 // @author       jschacosta
 // @match        https://www.youtube.com/*
@@ -245,6 +245,17 @@
     if (!estiloSoloAudio || !estiloSoloAudio.isConnected) estiloSoloAudio = insertarEstilo(css);
     else estiloSoloAudio.textContent = css;
     if (opciones.soloAudio) bajarCalidad();
+    else if (estiloSoloAudio.dataset.antes === '1') restaurarCalidad();
+    estiloSoloAudio.dataset.antes = opciones.soloAudio ? '1' : '0';
+  }
+
+  function restaurarCalidad() {
+    try {
+      const jugador = paginaWin.document.getElementById('movie_player');
+      if (jugador && typeof jugador.setPlaybackQualityRange === 'function') {
+        jugador.setPlaybackQualityRange('auto', 'auto');
+      }
+    } catch (_) { /* no crítico */ }
   }
 
   function bajarCalidad() {
@@ -296,6 +307,19 @@
     return false;
   }
 
+  // Si YouTube tarda en quitar la marca de anuncio, el <video> ya puede tener el contenido real.
+  // Se compara con la duración del video pedido para no saltarlo por error.
+  function esElVideoReal(video) {
+    try {
+      const jugador = paginaWin.document.getElementById('movie_player');
+      const respuesta = jugador && typeof jugador.getPlayerResponse === 'function' && jugador.getPlayerResponse();
+      const largo = Number(respuesta && respuesta.videoDetails && respuesta.videoDetails.lengthSeconds);
+      return largo > 0 && Math.abs(video.duration - largo) < 2;
+    } catch (_) {
+      return false;
+    }
+  }
+
   function adelantar(video) {
     if (!video) return;
     if (!video.muted) video.muted = true;
@@ -304,7 +328,7 @@
       try { video.playbackRate = vel; } catch (_) { video.playbackRate = 4; }
     }
     if (reglas.saltarAlFinal && Number.isFinite(video.duration) && video.duration > 0
-        && video.currentTime < video.duration - 0.3) {
+        && video.currentTime < video.duration - 0.3 && !esElVideoReal(video)) {
       try { video.currentTime = video.duration - 0.1; } catch (_) { /* algunos anuncios no dejan */ }
     }
     if (video.paused) video.play().catch(() => {});
